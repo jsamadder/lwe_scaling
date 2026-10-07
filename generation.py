@@ -58,5 +58,3 @@ class DiscreteGaussian(Distribution):
         self.q = q
 
     def sample(self, m):
-        
-
