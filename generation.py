@@ -83,7 +83,7 @@ class DiscreteGaussian(Distribution):
         Return single sample in range [0, q-1]
         """
         while True:
-            x = np.random.randint(-self.bound, self.bound)
+            x = np.random.randint(-self.bound, self.bound+1)
             y = np.random.random() * self.fmax
             if y > self.ptable[x + self.bound]:
                 continue
