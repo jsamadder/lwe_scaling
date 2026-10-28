@@ -1,7 +1,7 @@
 import numpy as np
 import math
 from abc import ABC, abstractmethod
-from scipy.stats import dlaplace
+from scipy.stats import dlaplace, skew, kurtosis
 
 class LWEGenerator():
     """
@@ -166,10 +166,69 @@ class SparseErrors(Distribution):
     def __init__(self, q: int, k: int):
         self.q = q
         self.k = k
+        self.error = None
 
     def sample(self, m):
         error = np.zeros((m,1), dtype=np.int64)
         sparse_indices = np.random.choice(m, size=self.k, replace=False)
-        error[sparse_indices] = np.random.choice(self.q, size=(self.k,1))
+        error[sparse_indices] = np.random.randint(1, self.q, size=(self.k,1))
 
+        self.error = error
         return error
+
+    def get_mean(self):
+        assert self.error is not None, "Assertion: Must sample before calculating mean"
+
+        return np.mean(self.error)
+
+    def get_variance(self):
+        assert self.error is not None, "Assertion: Must sample before calculating variance"
+
+        return np.var(self.error)
+    
+    def get_skew(self):
+        assert self.error is not None, "Assertion: Must sample before calculating skew"
+
+        return skew(self.error.flatten())
+    
+    def get_kurtosis(self):
+        assert self.error is not None, "Assertion: Must sample before calculating kurtosis"
+
+        return kurtosis(self.error.flatten()) - 3
+
+class CenteredBinomial(Distribution):
+
+    def __init__(self, q: int, eta: int, size: int):
+        self.q = q
+        self.eta = eta
+        self.size = size
+        self.error = None
+
+    def sample(self):
+        a = np.random.randint(0, 2, size=(self.size, self.eta))
+        b = np.random.randint(0, 2, size=(self.size, self.eta))
+
+        error = np.sum(a, axis=1) - np.sum(b, axis=1)
+        self.error = error % self.q
+
+        return self.error
+
+    def get_mean(self):
+        assert self.error is not None, "Assertion: Must sample before calculating mean"
+
+        return np.mean(self.error)
+
+    def get_variance(self):
+        assert self.error is not None, "Assertion: Must sample before calculating variance"
+
+        return np.var(self.error)
+
+    def get_skew(self):
+        assert self.error is not None, "Assertion: Must sample before calculating skew"
+
+        return skew(self.error.flatten())
+    
+    def get_kurtosis(self):
+        assert self.error is not None, "Assertion: Must sample before calculating kurtosis"
+
+        return kurtosis(self.error.flatten()) - 3
