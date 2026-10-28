@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from abc import ABC, abstractmethod
+from scipy.stats import dlaplace
 
 class LWEGenerator():
     """
@@ -46,22 +47,49 @@ class Distribution(ABC):
     def sample(self, m: int) -> np.ndarray:
         pass
 
+    @abstractmethod
+    def get_mean(self):
+        pass
+
+    def get_variance(self):
+        pass
+
+    def get_skew(self):
+        pass
+
+    def get_kurtosis(self):
+        pass
+
 class DiscreteGaussian(Distribution):
     """
     Discrete Guassian distribution
 
     q - modulus
-    sigma - standard deviation
+    mean - mean
+    std - standard deviation
     lim - bound for samples
           values outside [-lim*sigma, lim*sigma] have probability 0
     """
 
-    def __init__(self, q: int, sigma: float = 1.0, lim: float=6.0):
-        self.sigma = sigma
+    def __init__(self, q: int, mean: int=0, std: float=1.0, lim: float=6.0):
         self.q = q
-        self.bound = math.floor(lim * sigma)
+        self.mean = mean
+        self.std = std
+        self.bound = math.floor(lim * std)
         self.fmax = self.pdf(0) # 0 has highest probability
         self.ptable = [self.pdf(x) for x in range(-self.bound, self.bound+1)]
+
+    def get_mean(self):
+        return self.mean
+
+    def get_variance(self):
+        return self.std ** 2
+
+    def get_skew(self):
+        return 0
+
+    def get_kurtosis(self):
+        return 3
 
     def sample(self, m):
         samples = []
@@ -74,8 +102,10 @@ class DiscreteGaussian(Distribution):
         pdf for Gaussian dist
         """
 
-        coeff = 1/(self.sigma * np.sqrt(2 * np.pi))
-        exponent = np.exp(-0.5 * (x / self.sigma) ** 2)
+        coeff = 1/(np.sqrt(2 * np.pi * (self.std ** 2)))
+        num = (x - self.mean) ** 2
+        denom = 2 * (self.std ** 2)
+        exponent = np.exp(-num/denom)
         return coeff * exponent
 
     def rejection_sample(self):
@@ -91,4 +121,55 @@ class DiscreteGaussian(Distribution):
                 break
         return x % self.q
 
+class DiscreteLaplacian(Distribution):
+    """
+    Discrete Laplacian distribution
+
+    q: modulus
+    a: scale parameter
+    loc: location parameter
+    """
+
+    def __init__(self, q: int, a: float=1.0, loc: int=0):
+        self.q = q
+        self.a = a
+        self.loc = loc
+        self.mean, self.variance, self.skew, self.kurtosis = dlaplace.stats(a, loc=loc, moments='mvsk')
     
+
+    def sample(self, m):
+        samples = []
+        for _ in range(m):
+            samples.append(dlaplace.rvs(self.a, loc=0) % self.q)
+        return np.array(samples, dtype=np.int64)
+
+    def get_mean(self):
+        return self.mean
+
+    def get_variance(self):
+        return self.variance
+
+    def get_skew(self):
+        return self.skew
+
+    def get_kurtosis(self):
+        return self.kurtosis
+
+class SparseErrors(Distribution):
+    """
+    Create a sparse error vector
+
+    q: modulus
+    k: number of non-zero entries of error vector
+    """
+
+    def __init__(self, q: int, k: int):
+        self.q = q
+        self.k = k
+
+    def sample(self, m):
+        error = np.zeros((m,1), dtype=np.int64)
+        sparse_indices = np.random.choice(m, size=self.k, replace=False)
+        error[sparse_indices] = np.random.choice(self.q, size=(self.k,1))
+
+        return error
