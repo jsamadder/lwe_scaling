@@ -2,6 +2,7 @@ import numpy as np
 import math
 from abc import ABC, abstractmethod
 from scipy.stats import dlaplace, skew, kurtosis
+from typing import List
 
 class LWEGenerator():
     """
@@ -11,7 +12,7 @@ class LWEGenerator():
      - q is the prime modulus
     """
     
-    def __init__(self, n: int, q: int, dist: Distribution):
+    def __init__(self, n: int, q: int, dists: list[Distribution]):
         """
         n: dimension
         q: prime modulus
@@ -19,7 +20,7 @@ class LWEGenerator():
         """
         self.n = n
         self.q = q
-        self.dist = dist
+        self.dists = dists
 
     def generate_samples(self, m: int, pos: bool=True):
         """
@@ -28,21 +29,32 @@ class LWEGenerator():
         """
         A = np.random.randint(0, self.q, size=(m, self.n))
         s = np.random.randint(0, self.q, size=(self.n,1))
-        e = self.dist.sample(m)
 
-        if pos:
-            b = (A @ s + e) % self.q
-            label = 1
-        else:
-            b = np.random.randint(0, self.q, size=(m,1))
-            label = 0
-        return A, b, label
+        errors, bs, labels = {}, {}, {}
+        for dist in self.dists:
+            e = dist.sample(m)
+            errors[str(dist)] = e
+
+            if pos:
+                b = (A @ s + e) % self.q
+                bs[str(dist)] = b
+                labels[str(dist)] = 1
+            else:
+                b = np.random.randint(0, self.q, size=(m,1))
+                bs[str(dist)] = b
+                labels[str(dist)] = 1
+        return A, s, errors, bs, labels
 
 class Distribution(ABC):
     """
     Abstract class for child distribution classes (discrete Gaussian, rounded Gaussian, etc.) to
     implement
     """
+
+    @abstractmethod
+    def __str__(self) -> str:
+        pass
+
     @abstractmethod
     def sample(self, m: int) -> np.ndarray:
         pass
@@ -78,6 +90,9 @@ class DiscreteGaussian(Distribution):
         self.bound = math.floor(lim * std)
         self.fmax = self.pdf(0) # 0 has highest probability
         self.ptable = [self.pdf(x) for x in range(-self.bound, self.bound+1)]
+
+    def __str__(self):
+        return "DiscreteGaussian"
 
     def get_mean(self):
         return self.mean
@@ -136,6 +151,8 @@ class DiscreteLaplacian(Distribution):
         self.loc = loc
         self.mean, self.variance, self.skew, self.kurtosis = dlaplace.stats(a, loc=loc, moments='mvsk')
     
+    def __str__(self):
+            return "DiscreteLaplacian"
 
     def sample(self, m):
         samples = []
@@ -168,6 +185,9 @@ class SparseErrors(Distribution):
         self.k = k
         self.error = None
 
+    def __str__(self):
+            return "SparseErrors"
+
     def sample(self, m):
         error = np.zeros((m,1), dtype=np.int64)
         sparse_indices = np.random.choice(m, size=self.k, replace=False)
@@ -198,15 +218,21 @@ class SparseErrors(Distribution):
 
 class CenteredBinomial(Distribution):
 
-    def __init__(self, q: int, eta: int, size: int):
+    def __init__(self, q: int, eta: int):
+        """
+        eta: number of bits to sample
+        """
+
         self.q = q
         self.eta = eta
-        self.size = size
         self.error = None
 
-    def sample(self):
-        a = np.random.randint(0, 2, size=(self.size, self.eta))
-        b = np.random.randint(0, 2, size=(self.size, self.eta))
+    def __str__(self):
+            return "CenteredBinomial"
+
+    def sample(self, m):
+        a = np.random.randint(0, 2, size=(m, self.eta))
+        b = np.random.randint(0, 2, size=(m, self.eta))
 
         error = np.sum(a, axis=1) - np.sum(b, axis=1)
         self.error = error % self.q
