@@ -3,6 +3,7 @@ import math
 from abc import ABC, abstractmethod
 from scipy.stats import dlaplace, skew, kurtosis
 from typing import List
+from tqdm import tqdm
 
 class LWEGenerator():
     """
@@ -12,7 +13,7 @@ class LWEGenerator():
      - q is the prime modulus
     """
     
-    def __init__(self, n: int, q: int, dists: list[Distribution]):
+    def __init__(self, n: int, q: int, dists: list["Distribution"]):
         """
         n: dimension
         q: prime modulus
@@ -27,12 +28,14 @@ class LWEGenerator():
         pos: b = (A @ s + e) % q
         otherwise b is sampled uniformly, no LWE structure
         """
+
+        print("Generating LWE samples...")
         A = np.random.randint(0, self.q, size=(m, self.n))
         s = np.random.randint(0, self.q, size=(self.n,1))
 
         errors, bs, labels = {}, {}, {}
         for dist in self.dists:
-            e = dist.sample(m)
+            e = dist.sample(m).reshape(m,1)
             errors[str(dist)] = e
 
             if pos:
@@ -42,7 +45,8 @@ class LWEGenerator():
             else:
                 b = np.random.randint(0, self.q, size=(m,1))
                 bs[str(dist)] = b
-                labels[str(dist)] = 1
+                labels[str(dist)] = 0
+        print("Finished generating LWE samples")
         return A, s, errors, bs, labels
 
 class Distribution(ABC):
@@ -87,9 +91,10 @@ class DiscreteGaussian(Distribution):
         self.q = q
         self.mean = mean
         self.std = std
-        self.bound = math.floor(lim * std)
-        self.fmax = self.pdf(0) # 0 has highest probability
-        self.ptable = [self.pdf(x) for x in range(-self.bound, self.bound+1)]
+        self.lower = math.floor(mean - lim * std)
+        self.upper = math.ceil(mean + lim * std)
+        self.ptable = [self.pdf(x) for x in range(self.lower, self.upper+1)]
+        self.fmax = max(self.ptable)
 
     def __str__(self):
         return "DiscreteGaussian"
@@ -108,7 +113,7 @@ class DiscreteGaussian(Distribution):
 
     def sample(self, m):
         samples = []
-        for _ in range(m):
+        for _ in tqdm(range(m), desc="Sampling Gaussian errors "):
             samples.append(self.rejection_sample())
         return np.array(samples, dtype=np.int64)
 
@@ -125,16 +130,13 @@ class DiscreteGaussian(Distribution):
 
     def rejection_sample(self):
         """
-        Return single sample in range [0, q-1]
+        Return single sample
         """
         while True:
-            x = np.random.randint(-self.bound, self.bound+1)
+            x = np.random.randint(self.lower, self.upper+1)
             y = np.random.random() * self.fmax
-            if y > self.ptable[x + self.bound]:
-                continue
-            else:
-                break
-        return x % self.q
+            if y <= self.pdf(x):
+                return x
 
 class DiscreteLaplacian(Distribution):
     """
@@ -156,8 +158,8 @@ class DiscreteLaplacian(Distribution):
 
     def sample(self, m):
         samples = []
-        for _ in range(m):
-            samples.append(dlaplace.rvs(self.a, loc=0) % self.q)
+        for _ in tqdm(range(m), desc="Sampling Laplacian errors"):
+            samples.append(dlaplace.rvs(self.a, loc=self.loc))
         return np.array(samples, dtype=np.int64)
 
     def get_mean(self):
@@ -189,6 +191,7 @@ class SparseErrors(Distribution):
             return "SparseErrors"
 
     def sample(self, m):
+        print("Sampling sparse errors")
         error = np.zeros((m,1), dtype=np.int64)
         sparse_indices = np.random.choice(m, size=self.k, replace=False)
         error[sparse_indices] = np.random.randint(1, self.q, size=(self.k,1))
@@ -231,11 +234,12 @@ class CenteredBinomial(Distribution):
             return "CenteredBinomial"
 
     def sample(self, m):
+        print("Sampling binomial errors")
         a = np.random.randint(0, 2, size=(m, self.eta))
         b = np.random.randint(0, 2, size=(m, self.eta))
 
         error = np.sum(a, axis=1) - np.sum(b, axis=1)
-        self.error = error % self.q
+        self.error = error
 
         return self.error
 
