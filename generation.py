@@ -23,31 +23,38 @@ class LWEGenerator():
         self.q = q
         self.dists = dists
 
-    def generate_samples(self, m: int, pos: bool=True):
+    def generate_samples(self, num_samples:int, m: int, pos: bool=True):
         """
         pos: b = (A @ s + e) % q
         otherwise b is sampled uniformly, no LWE structure
         """
 
-        print("Generating LWE samples...")
-        A = np.random.randint(0, self.q, size=(m, self.n))
-        s = np.random.randint(0, self.q, size=(self.n,1))
+        samples = []
+        for _ in tqdm(range(num_samples), desc="Generating samples", unit=" samples"):
+            A = np.random.randint(0, self.q, size=(m, self.n))
+            s = np.random.randint(0, self.q, size=(self.n,1))
 
-        errors, bs, labels = {}, {}, {}
-        for dist in self.dists:
-            e = dist.sample(m).reshape(m,1)
-            errors[str(dist)] = e
+            errors, bs, labels = {}, {}, {}
+            for i, dist in enumerate(self.dists):
+                key = str(dist)
+                if key in errors:
+                    key = f"{key}_{i}"
 
-            if pos:
-                b = (A @ s + e) % self.q
-                bs[str(dist)] = b
-                labels[str(dist)] = 1
-            else:
-                b = np.random.randint(0, self.q, size=(m,1))
-                bs[str(dist)] = b
-                labels[str(dist)] = 0
+                e = dist.sample(m).reshape(m,1)
+                errors[key] = e
+
+                if pos:
+                    b = (A @ s + e) % self.q
+                    bs[key] = b
+                    labels[key] = 1
+                else:
+                    b = np.random.randint(0, self.q, size=(m,1))
+                    bs[key] = b
+                    labels[key] = 0
+
+            samples.append((A, s, errors, bs, labels))
         print("Finished generating LWE samples")
-        return A, s, errors, bs, labels
+        return samples
 
 class Distribution(ABC):
     """
@@ -91,13 +98,14 @@ class DiscreteGaussian(Distribution):
         self.q = q
         self.mean = mean
         self.std = std
+        self.lim = lim
         self.lower = math.floor(mean - lim * std)
         self.upper = math.ceil(mean + lim * std)
         self.ptable = [self.pdf(x) for x in range(self.lower, self.upper+1)]
         self.fmax = max(self.ptable)
 
     def __str__(self):
-        return "DiscreteGaussian"
+        return f"DiscreteGaussian(q={self.q}, mean={self.mean}, std={self.std}, lim={self.lim})"
 
     def get_mean(self):
         return self.mean
@@ -113,7 +121,7 @@ class DiscreteGaussian(Distribution):
 
     def sample(self, m):
         samples = []
-        for _ in tqdm(range(m), desc="Sampling Gaussian errors "):
+        for _ in range(m):
             samples.append(self.rejection_sample())
         return np.array(samples, dtype=np.int64)
 
@@ -154,11 +162,11 @@ class DiscreteLaplacian(Distribution):
         self.mean, self.variance, self.skew, self.kurtosis = dlaplace.stats(a, loc=loc, moments='mvsk')
     
     def __str__(self):
-            return "DiscreteLaplacian"
+            return f"DiscreteLaplacian(q={self.q}, a={self.a}, loc={self.loc})"
 
     def sample(self, m):
         samples = []
-        for _ in tqdm(range(m), desc="Sampling Laplacian errors"):
+        for _ in range(m):
             samples.append(dlaplace.rvs(self.a, loc=self.loc))
         return np.array(samples, dtype=np.int64)
 
@@ -188,10 +196,9 @@ class SparseErrors(Distribution):
         self.error = None
 
     def __str__(self):
-            return "SparseErrors"
+            return f"SparseErrors(q={self.q}, k={self.k})"
 
     def sample(self, m):
-        print("Sampling sparse errors")
         error = np.zeros((m,1), dtype=np.int64)
         sparse_indices = np.random.choice(m, size=self.k, replace=False)
         error[sparse_indices] = np.random.randint(1, self.q, size=(self.k,1))
@@ -217,7 +224,7 @@ class SparseErrors(Distribution):
     def get_kurtosis(self):
         assert self.error is not None, "Assertion: Must sample before calculating kurtosis"
 
-        return kurtosis(self.error.flatten()) - 3
+        return kurtosis(self.error.flatten())
 
 class CenteredBinomial(Distribution):
 
@@ -231,10 +238,9 @@ class CenteredBinomial(Distribution):
         self.error = None
 
     def __str__(self):
-            return "CenteredBinomial"
+            return f"CenteredBinomial(q={self.q}, eta={self.eta})"
 
     def sample(self, m):
-        print("Sampling binomial errors")
         a = np.random.randint(0, 2, size=(m, self.eta))
         b = np.random.randint(0, 2, size=(m, self.eta))
 
@@ -261,4 +267,4 @@ class CenteredBinomial(Distribution):
     def get_kurtosis(self):
         assert self.error is not None, "Assertion: Must sample before calculating kurtosis"
 
-        return kurtosis(self.error.flatten()) - 3
+        return kurtosis(self.error.flatten())
