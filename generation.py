@@ -2,7 +2,6 @@ import numpy as np
 import math
 from abc import ABC, abstractmethod
 from scipy.stats import dlaplace, skew, kurtosis
-from typing import List
 from tqdm import tqdm
 
 class LWEGenerator():
@@ -29,30 +28,24 @@ class LWEGenerator():
         otherwise b is sampled uniformly, no LWE structure
         """
 
-        samples = []
+        samples = {str(dist): [] for dist in self.dists}
+
         for _ in tqdm(range(num_samples), desc="Generating samples", unit=" samples"):
             A = np.random.randint(0, self.q, size=(m, self.n))
             s = np.random.randint(0, self.q, size=(self.n,1))
 
-            errors, bs, labels = {}, {}, {}
-            for i, dist in enumerate(self.dists):
-                key = str(dist)
-                if key in errors:
-                    key = f"{key}_{i}"
-
+            for dist in self.dists: 
                 e = dist.sample(m).reshape(m,1)
-                errors[key] = e
 
                 if pos:
                     b = (A @ s + e) % self.q
-                    bs[key] = b
-                    labels[key] = 1
+                    label = 1
                 else:
                     b = np.random.randint(0, self.q, size=(m,1))
-                    bs[key] = b
-                    labels[key] = 0
+                    label = 0
 
-            samples.append((A, s, errors, bs, labels))
+                samples[str(dist)].append((A, s, e, b, label))
+
         print("Finished generating LWE samples")
         return samples
 

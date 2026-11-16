@@ -1,9 +1,6 @@
 import generation
 import time
 
-n = 10
-q = 37
-m = n
 
 def time_test(num_samples, m, non_zeros):
     """
@@ -24,14 +21,18 @@ def time_test(num_samples, m, non_zeros):
     ]
 
     generator = generation.LWEGenerator(n, q, dists)
-    generator.generate_samples(num_samples=samples, m=m)
+    gen_samples = generator.generate_samples(num_samples=samples, m=m)
 
     end_time = time.perf_counter()
     total_time = end_time - start_time
     print(f"Generating {samples} LWE samples with {m} equations and {len(dists)} distributions took {total_time:.3f} seconds")
 
+    print(gen_samples["DiscreteGaussian(q=37, mean=0, std=1.0, lim=6.0)"])
 
-samples = 1_000_000
+n = 10
+q = 37
+m = n
+samples = 1000
 sparse_non_zeros = 3
 time_test(samples, m, sparse_non_zeros)
 
